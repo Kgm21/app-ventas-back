@@ -1,0 +1,23 @@
+# Dependencias
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Entorno
+.env
+.env.local
+.env.development
+.env.production
+
+# Logs y temporales
+*.log
+.DS_Store
+Thumbs.db
+
+# Builds o dist (si generás)
+dist/
+build/
+
+# Editor
+.vscode/
+.idea/
