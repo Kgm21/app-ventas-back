@@ -8,6 +8,8 @@ yarn-error.log
 .env.local
 .env.development
 .env.production
+crear-nuevo-admin*
+reset-admin-password.js*
 
 # Logs y temporales
 *.log

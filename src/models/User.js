@@ -1,27 +1,43 @@
 import mongoose from "mongoose";
+import bcrypt from "bcryptjs";
 
-const userSchema = new mongoose.Schema({
-  name: {
-    type: String,
+const userSchema = new mongoose.Schema(
+  {
+    name: {
+      type: String,
+      trim: true,
+    },
+
+    email: {
+      type: String,
+      required: true,
+      unique: true,
+      lowercase: true,
+      trim: true,
+    },
+
+    password: {
+      type: String,
+      required: true,
+      select: false,
+    },
+
+    role: {
+      type: String,
+      enum: ["user", "admin"],
+      default: "user",
+    },
   },
+  { timestamps: true }
+);
 
-  email: {
-    type: String,
-    required: true,
-    unique: true,
-  },
+// 🔐 HASH AUTOMÁTICO DE PASSWORD
+userSchema.pre("save", async function () {
+  // Solo hashea si la password fue modificada
+  if (!this.isModified("password")) return;
 
-  password: {
-    type: String,
-    required: true,
-  },
-
-  role: {
-    type: String,
-    enum: ["user", "admin"],
-    default: "user",
-  },
-
-}, { timestamps: true });
+  const salt = await bcrypt.genSalt(10);
+  this.password = await bcrypt.hash(this.password, salt);
+});
 
 export default mongoose.model("User", userSchema);
