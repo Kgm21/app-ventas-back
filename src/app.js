@@ -1,4 +1,4 @@
-import "dotenv/config";
+import "dotenv/config"; // SIEMPRE ARRIBA
 import express from "express";
 import cors from "cors";
 
@@ -9,49 +9,52 @@ import userRoutes from "./routes/user.routes.js";
 
 const app = express();
 
-// 🔥 CORS - esta configuración ya maneja OPTIONS automáticamente
+// 🔥 CORS - maneja OPTIONS automáticamente, sin necesidad de app.options()
 const allowedOrigins = [
-  "http://localhost:5173",
-  "https://zerografica-prueba.netlify.app",
+  "http://localhost:5173",                       // Desarrollo local (Vite)
+  "https://zerografica-prueba.netlify.app",      // Producción en Netlify
+  // Agrega más si necesitas (ej. previews: process.env.ALLOWED_ORIGINS?.split(',') )
 ];
 
 app.use(
   cors({
     origin: (origin, callback) => {
+      // Permitir sin origin (Postman, curl, etc.) o si está en la lista
       if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, origin || "*"); // permite sin origin (Postman, etc.)
+        callback(null, origin); // Devuelve el origin exacto (obligatorio con credentials: true)
       } else {
-        callback(new Error(`Origen no permitido: ${origin}`));
+        callback(new Error(`Origen no permitido por CORS: ${origin}`));
       }
     },
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "Accept"],
-    credentials: true,
-    optionsSuccessStatus: 200,
+    credentials: true,           // Si usas cookies o auth con credenciales
+    optionsSuccessStatus: 200,   // Para compatibilidad con navegadores antiguos
   })
 );
 
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.urlencoded({ extended: true })); // Útil si envías forms
 
+// Ruta raíz de prueba
 app.get("/", (req, res) => {
   res.send("API Carteras funcionando 🚀");
 });
 
+// Rutas principales
 app.use("/api/auth", authRoutes);
 app.use("/api/products", productRoutes);
 app.use("/api/categories", categoryRoutes);
 app.use("/api/users", userRoutes);
 
+// Ruta de test para depurar CORS y conexión
 app.get("/api/test", (req, res) => {
   res.json({
     message: "Ruta de prueba OK",
     time: new Date().toISOString(),
     originRecibido: req.headers.origin || "sin origin",
-    environment: process.env.NODE_ENV || "unknown",
+    environment: process.env.NODE_ENV || "development",
   });
 });
-
-// ¡NO agregues wildcard con * aquí a menos que lo nombres!
 
 export default app;
