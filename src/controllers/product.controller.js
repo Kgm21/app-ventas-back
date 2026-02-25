@@ -1,384 +1,301 @@
 import mongoose from "mongoose";
 import Counter from "../models/Counter.js";
 import Product from "../models/Product.js";
+import cloudinary from "../config/cloudinary.js";
 
-/* =========================
-   CREAR PRODUCTO
-========================= */
+// Helper para subir una imagen a Cloudinary (retorna solo la URL o null)
+const uploadToCloudinary = async (file) => {
+  if (!file || !file.buffer) {
+    console.warn(`Archivo inválido o sin buffer: ${file?.originalname || "sin nombre"}`);
+    return null;
+  }
+
+  try {
+    console.log(`Subiendo: ${file.originalname} (${file.size} bytes)`);
+
+    const result = await new Promise((resolve, reject) => {
+      cloudinary.uploader.upload_stream(
+        {
+          resource_type: "image",
+          folder: "carteras/productos",
+          // Opcional: descomenta si querés optimización automática
+          // quality: "auto:good",
+          // fetch_format: "auto",
+          // width: 1200,
+          // crop: "limit"
+        },
+        (error, result) => {
+          if (error) reject(error);
+          else resolve(result.secure_url);
+        }
+      ).end(file.buffer);
+    });
+
+    console.log(`Subida OK: ${result}`);
+    return result;
+  } catch (error) {
+    console.error(`Error subiendo ${file.originalname || "archivo"}:`, error.message);
+    return null;
+  }
+};
+
+// CREAR PRODUCTO
 export const createProduct = async (req, res) => {
   try {
+    console.log("POST /api/products - Body:", req.body);
+    console.log("Archivos recibidos:", req.files?.length || 0);
+    console.log("Nombres:", req.files?.map(f => f.originalname) || []);
 
     const { name, price, category, description, stock } = req.body;
 
-    if (!name || price === undefined || !category) {
-      return res.status(400).json({
-        success: false,
-        message: "Faltan campos requeridos: name, price, category",
-      });
+    if (!name?.trim()) {
+      return res.status(400).json({ success: false, message: "Nombre obligatorio" });
     }
 
-    if (!mongoose.Types.ObjectId.isValid(category)) {
-      return res.status(400).json({
-        success: false,
-        message: "ID de categoría inválido",
-      });
+    if (price === undefined || isNaN(Number(price)) || Number(price) < 0) {
+      return res.status(400).json({ success: false, message: "Precio inválido" });
     }
 
-    // generar número secuencial
+    if (!category || !mongoose.Types.ObjectId.isValid(category)) {
+      return res.status(400).json({ success: false, message: "Categoría inválida" });
+    }
+
+    let imageUrls = [];
+
+    // Subir archivos nuevos
+    if (req.files?.length > 0) {
+      console.log(`Procesando ${req.files.length} archivos...`);
+      const uploaded = await Promise.allSettled(
+        req.files.map(uploadToCloudinary)
+      );
+
+      imageUrls = uploaded
+        .filter(r => r.status === "fulfilled")
+        .map(r => r.value)
+        .filter(Boolean);
+    }
+
+    // Agregar URLs directas del body (opcional)
+    if (req.body.images) {
+      const bodyImages = Array.isArray(req.body.images)
+        ? req.body.images.filter(u => typeof u === "string" && u.trim().startsWith("http"))
+        : (typeof req.body.images === "string" && req.body.images.trim().startsWith("http")
+            ? [req.body.images.trim()]
+            : []);
+      imageUrls.push(...bodyImages);
+    }
+
+    if (imageUrls.length > 0) {
+      console.log("URLs a guardar:", imageUrls);
+    } else {
+      console.log("No hay imágenes válidas");
+    }
+
     const counter = await Counter.findOneAndUpdate(
       { name: "product" },
       { $inc: { seq: 1 } },
       { new: true, upsert: true }
     );
 
-    const productNumber = counter.seq;
-
-    // 🔥 guardar url y public_id
-    const images = req.files?.length
-      ? req.files.map(file => ({
-          url: file.path,
-          public_id: file.filename
-        }))
-      : [];
-
-    const productData = {
-
-      productNumber,
+    const product = await Product.create({
+      productNumber: counter.seq,
       name: name.trim(),
       price: Number(price),
       category,
       description: description?.trim() || "",
-      stock: stock !== undefined ? Number(stock) : 0,
-      images,
+      stock: Number(stock) || 0,
+      images: imageUrls,
       active: true,
+    });
 
-    };
-
-    const product = await Product.create(productData);
-
-    const populatedProduct = await Product.findById(product._id)
+    const populated = await Product.findById(product._id)
       .populate("category", "name");
 
-    res.status(201).json({
-      success: true,
-      data: populatedProduct,
-    });
+    console.log("Producto creado OK:", product._id);
+    console.log("Imágenes guardadas:", product.images);
 
-  }
-  catch (error) {
-
+    res.status(201).json({ success: true, data: populated });
+  } catch (error) {
     console.error("Error al crear producto:", error);
-
     res.status(500).json({
       success: false,
-      message: "Error al crear el producto",
+      message: "Error interno al crear producto",
+      error: error.message,
     });
-
   }
 };
 
-
-/* =========================
-   OBTENER TODOS LOS PRODUCTOS
-========================= */
-export const getProducts = async (req, res) => {
-
+// ACTUALIZAR PRODUCTO
+export const updateProduct = async (req, res) => {
   try {
+    const updateData = {};
 
-    const products = await Product.find({ active: true })
+    if (req.body.name !== undefined) updateData.name = req.body.name.trim();
+    if (req.body.price !== undefined) updateData.price = Number(req.body.price);
+
+    if (req.body.category !== undefined) {
+      if (!mongoose.Types.ObjectId.isValid(req.body.category)) {
+        return res.status(400).json({ success: false, message: "ID de categoría inválido" });
+      }
+      updateData.category = req.body.category;
+    }
+
+    if (req.body.description !== undefined) updateData.description = req.body.description.trim();
+    if (req.body.stock !== undefined) updateData.stock = Number(req.body.stock);
+
+    let imageUrls = [];
+
+    if (req.files?.length > 0) {
+      console.log(`Subiendo ${req.files.length} nuevos archivos...`);
+      const uploaded = await Promise.allSettled(
+        req.files.map(uploadToCloudinary)
+      );
+      imageUrls = uploaded
+        .filter(r => r.status === "fulfilled")
+        .map(r => r.value)
+        .filter(Boolean);
+    }
+
+    if (req.body.images !== undefined) {
+      const bodyImages = Array.isArray(req.body.images)
+        ? req.body.images.filter(u => typeof u === "string" && u.trim().startsWith("http"))
+        : (typeof req.body.images === "string" && req.body.images.trim().startsWith("http")
+            ? [req.body.images.trim()]
+            : []);
+      imageUrls.push(...bodyImages);
+    }
+
+    if (imageUrls.length > 0) {
+      updateData.images = imageUrls;
+    }
+
+    const product = await Product.findOneAndUpdate(
+      { _id: req.params.id, active: true },
+      updateData,
+      { new: true, runValidators: true }
+    ).populate("category", "name");
+
+    if (!product) {
+      return res.status(404).json({ success: false, message: "Producto no encontrado" });
+    }
+
+    res.json({ success: true, data: product });
+  } catch (error) {
+    console.error("Error al actualizar producto:", error);
+    res.status(500).json({ success: false, message: "Error interno al actualizar" });
+  }
+};
+
+// LISTAR PRODUCTOS (con paginación)
+export const getProducts = async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const skip = (page - 1) * limit;
+
+    const query = { active: true };
+
+    if (req.query.category) query.category = req.query.category;
+
+    const products = await Product.find(query)
       .populate("category", "name")
       .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
       .lean();
+
+    const total = await Product.countDocuments(query);
 
     res.json({
       success: true,
       data: products,
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(total / limit),
+        totalProducts: total,
+        perPage: limit,
+        hasNextPage: page * limit < total,
+        hasPrevPage: page > 1,
+      },
     });
-
-  }
-  catch (error) {
-
+  } catch (error) {
     console.error("Error al obtener productos:", error);
-
-    res.status(500).json({
-      success: false,
-      message: "Error al obtener productos",
-    });
-
+    res.status(500).json({ success: false, message: "Error al obtener productos" });
   }
-
 };
 
-
-/* =========================
-   OBTENER PRODUCTO POR ID
-========================= */
+// OBTENER PRODUCTO POR ID
 export const getProductById = async (req, res) => {
-
   try {
-
     const { id } = req.params;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
-
-      return res.status(400).json({
-        success: false,
-        message: "ID de producto inválido",
-      });
-
+      return res.status(400).json({ success: false, message: "ID inválido" });
     }
 
-    const product = await Product.findOne({
-      _id: id,
-      active: true
-    })
-    .populate("category", "name")
-    .lean();
+    const product = await Product.findOne({ _id: id, active: true })
+      .populate("category", "name")
+      .lean();
 
     if (!product) {
-
-      return res.status(404).json({
-        success: false,
-        message: "Producto no encontrado",
-      });
-
+      return res.status(404).json({ success: false, message: "Producto no encontrado" });
     }
 
-    res.json({
-      success: true,
-      data: product,
-    });
-
-  }
-  catch (error) {
-
+    res.json({ success: true, data: product });
+  } catch (error) {
     console.error("Error al obtener producto:", error);
-
-    res.status(500).json({
-      success: false,
-      message: "Error al obtener producto",
-    });
-
+    res.status(500).json({ success: false, message: "Error al obtener producto" });
   }
-
 };
 
-
-/* =========================
-   ACTUALIZAR PRODUCTO
-========================= */
-export const updateProduct = async (req, res) => {
-
-  try {
-
-    const updateData = {};
-
-    if (req.body.name !== undefined)
-      updateData.name = req.body.name.trim();
-
-    if (req.body.price !== undefined)
-      updateData.price = Number(req.body.price);
-
-    if (req.body.category !== undefined) {
-
-      if (!mongoose.Types.ObjectId.isValid(req.body.category)) {
-
-        return res.status(400).json({
-          success: false,
-          message: "ID de categoría inválido",
-        });
-
-      }
-
-      updateData.category = req.body.category;
-
-    }
-
-    if (req.body.description !== undefined)
-      updateData.description = req.body.description.trim() || "";
-
-    if (req.body.stock !== undefined)
-      updateData.stock = Number(req.body.stock);
-
-    // 🔥 guardar nuevas imágenes correctamente
-    if (req.files?.length) {
-
-      updateData.images = req.files.map(file => ({
-        url: file.path,
-        public_id: file.filename
-      }));
-
-    }
-
-    if (!Object.keys(updateData).length) {
-
-      return res.status(400).json({
-        success: false,
-        message: "No se enviaron campos para actualizar",
-      });
-
-    }
-
-    const product = await Product.findOneAndUpdate(
-      {
-        _id: req.params.id,
-        active: true
-      },
-      updateData,
-      {
-        new: true,
-        runValidators: true
-      }
-    ).populate("category", "name");
-
-    if (!product) {
-
-      return res.status(404).json({
-        success: false,
-        message: "Producto no encontrado",
-      });
-
-    }
-
-    res.json({
-      success: true,
-      data: product,
-    });
-
-  }
-  catch (error) {
-
-    console.error("Error al actualizar producto:", error);
-
-    res.status(500).json({
-      success: false,
-      message: "Error al actualizar producto",
-    });
-
-  }
-
-};
-
-
-/* =========================
-   ELIMINAR PRODUCTO (BORRADO LÓGICO)
-========================= */
+// ELIMINAR PRODUCTO (borrado lógico)
 export const deleteProduct = async (req, res) => {
-
   try {
-
     const product = await Product.findOneAndUpdate(
-      {
-        _id: req.params.id,
-        active: true
-      },
-      {
-        active: false
-      },
-      {
-        new: true
-      }
+      { _id: req.params.id, active: true },
+      { active: false },
+      { new: true }
     );
 
     if (!product) {
-
-      return res.status(404).json({
-        success: false,
-        message: "Producto no encontrado o ya eliminado",
-      });
-
+      return res.status(404).json({ success: false, message: "Producto no encontrado o ya eliminado" });
     }
 
-    res.json({
-      success: true,
-      message: "Producto eliminado correctamente",
-    });
-
-  }
-  catch (error) {
-
+    res.json({ success: true, message: "Producto eliminado" });
+  } catch (error) {
     console.error("Error al eliminar producto:", error);
-
-    res.status(500).json({
-      success: false,
-      message: "Error al eliminar producto",
-    });
-
+    res.status(500).json({ success: false, message: "Error al eliminar producto" });
   }
-
 };
 
-
-/* =========================
-   LINK DE CONSULTA WHATSAPP
-========================= */
+// LINK DE CONSULTA WHATSAPP
 export const getWhatsappConsultLink = async (req, res) => {
-
   try {
-
     const { id } = req.params;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
-
-      return res.status(400).json({
-        success: false,
-        message: "ID de producto inválido",
-      });
-
+      return res.status(400).json({ success: false, message: "ID inválido" });
     }
 
-    const product = await Product.findOne({
-      _id: id,
-      active: true,
-    }).lean();
+    const product = await Product.findOne({ _id: id, active: true }).lean();
 
     if (!product) {
-
-      return res.status(404).json({
-        success: false,
-        message: "Producto no encontrado",
-      });
-
+      return res.status(404).json({ success: false, message: "Producto no encontrado" });
     }
 
     const number = process.env.WHATSAPP_NUMBER;
 
     if (!number) {
-
-      return res.status(500).json({
-        success: false,
-        message: "Número de WhatsApp no configurado",
-      });
-
+      return res.status(500).json({ success: false, message: "Número de WhatsApp no configurado" });
     }
 
-    const message = `Hola.
-Quiero consultar por este producto:
+    const message = `Hola.\nQuiero consultar por este producto:\n\nID Producto: ${product.productNumber}\nProducto: ${product.name}\nPrecio: $${Number(product.price).toLocaleString("es-AR")}\n\n¿Hay stock disponible?`;
 
-ID Producto: ${product.productNumber}
-Producto: ${product.name}
-Precio: $${Number(product.price).toLocaleString("es-AR")}
+    const url = `https://wa.me/${number}?text=${encodeURIComponent(message)}`;
 
-¿Hay stock disponible?`;
-
-    const url =
-      `https://wa.me/${number}?text=${encodeURIComponent(message)}`;
-
-    res.json({
-      success: true,
-      whatsappUrl: url,
-    });
-
-  }
-  catch (error) {
-
+    res.json({ success: true, whatsappUrl: url });
+  } catch (error) {
     console.error("Error WhatsApp:", error);
-
-    res.status(500).json({
-      success: false,
-      message: "Error al generar link de WhatsApp",
-    });
-
+    res.status(500).json({ success: false, message: "Error al generar link" });
   }
-
 };
