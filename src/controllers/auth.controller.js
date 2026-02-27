@@ -1,8 +1,8 @@
+// src/controllers/auth.controller.js
 import User from "../models/User.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 
-// LOGIN
 // LOGIN
 export const login = async (req, res) => {
   try {
@@ -18,7 +18,7 @@ export const login = async (req, res) => {
     const emailNormalized = email.toLowerCase().trim();
 
     const user = await User.findOne({ email: emailNormalized })
-      .select("+password +role +email")
+      .select("+password +role +email +name") // +name si lo tenés
       .lean();
 
     if (!user) {
@@ -38,7 +38,7 @@ export const login = async (req, res) => {
     }
 
     if (!process.env.JWT_SECRET) {
-      console.error("JWT_SECRET no definido");
+      console.error("JWT_SECRET no definido en .env");
       return res.status(500).json({
         success: false,
         message: "Error interno del servidor",
@@ -56,11 +56,10 @@ export const login = async (req, res) => {
       {
         expiresIn: "7d", // 7 días
         algorithm: "HS256",
-        issuer: process.env.APP_NAME || "carteras-app",
       }
     );
 
-    // Opcional: cookie httpOnly (más segura, pero si usás Bearer en header, podés omitirla)
+    // Cookie httpOnly segura (se envía automáticamente con withCredentials: true)
     res.cookie("token", token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
@@ -69,16 +68,17 @@ export const login = async (req, res) => {
       path: "/",
     });
 
-    // Respuesta con token (esto es lo que faltaba)
-    res.json({
+    // Respuesta con token en el body (para que el frontend lo guarde en localStorage si quiere)
+    res.status(200).json({
       success: true,
       message: "Inicio de sesión exitoso",
-      token, // ← AGREGADO
+      token, // ← ahora sí se devuelve en el body
       role: user.role,
       user: {
         id: user._id,
         email: user.email,
         role: user.role,
+        name: user.name || user.email.split("@")[0],
       },
     });
   } catch (error) {
@@ -108,7 +108,7 @@ export const logout = (req, res) => {
 // OBTENER USUARIO ACTUAL (/me)
 export const me = async (req, res) => {
   try {
-    // Si authAdmin puso req.user, lo usamos
+    // req.user viene del middleware auth (jwt.verify)
     if (!req.user) {
       return res.status(401).json({
         success: false,
@@ -116,8 +116,7 @@ export const me = async (req, res) => {
       });
     }
 
-    // Buscamos el usuario fresco (por si cambió algo)
-    const user = await User.findById(req.user._id)
+    const user = await User.findById(req.user.id)
       .select("-password -__v -resetPasswordToken -resetPasswordExpires")
       .lean();
 

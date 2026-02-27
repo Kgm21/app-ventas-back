@@ -5,7 +5,7 @@ export const authAdmin = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
 
-    // 1. Verificar header y formato
+    // 1. Verificar header y formato Bearer
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return res.status(401).json({
         success: false,
@@ -22,7 +22,7 @@ export const authAdmin = async (req, res, next) => {
       });
     }
 
-    // 2. Verificar JWT_SECRET (evita crash silencioso)
+    // 2. Verificar que exista JWT_SECRET
     if (!process.env.JWT_SECRET) {
       console.error("JWT_SECRET no definido en variables de entorno");
       return res.status(500).json({
@@ -31,11 +31,11 @@ export const authAdmin = async (req, res, next) => {
       });
     }
 
-    // 3. Verificar token con manejo detallado
+    // 3. Verificar token con manejo detallado de errores
     let decoded;
     try {
       decoded = jwt.verify(token, process.env.JWT_SECRET, {
-        algorithms: ["HS256"], // fuerza el algoritmo esperado
+        algorithms: ["HS256"],
       });
     } catch (err) {
       let message = "Token inválido";
@@ -60,7 +60,7 @@ export const authAdmin = async (req, res, next) => {
       });
     }
 
-    // 4. Verificar ID en token
+    // 4. Verificar que el token tenga ID
     if (!decoded?.id) {
       return res.status(401).json({
         success: false,
@@ -68,7 +68,7 @@ export const authAdmin = async (req, res, next) => {
       });
     }
 
-    // 5. Buscar usuario (lean + select mínimo)
+    // 5. Buscar usuario (lean + select mínimo para seguridad)
     const user = await User.findById(decoded.id)
       .select("-password -__v -createdAt -updatedAt -resetPasswordToken -resetPasswordExpires")
       .lean();
@@ -96,17 +96,19 @@ export const authAdmin = async (req, res, next) => {
       });
     }
 
-    // 8. Asignar datos al request
+    // 8. Asignar datos al request (útil para rutas siguientes)
     req.user = user;
     req.token = token;
     req.tokenDecoded = decoded;
+    req.isAdmin = true; // ← bandera útil para rutas que requieran admin estricto
 
     next();
   } catch (error) {
+    // Log sin exponer stack en producción (seguridad)
     console.error("Error crítico en authAdmin middleware:", {
       message: error.message,
-      stack: error.stack,
       name: error.name,
+      // stack: process.env.NODE_ENV === "development" ? error.stack : undefined,
     });
 
     return res.status(500).json({

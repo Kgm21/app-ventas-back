@@ -1,16 +1,17 @@
+// routes/auth.routes.js
 import express from "express";
 import { body, validationResult } from "express-validator";
 import rateLimit from "express-rate-limit";
 
 import { login, logout } from "../controllers/auth.controller.js";
-import { authAdmin } from "../middlewares/auth.middleware.js";  // ← importamos el middleware
+import { authAdmin } from "../middlewares/auth.middleware.js"; // ← CAMBIA A authRequired (más genérico)
 
 const router = express.Router();
 
 // Rate limit para login: 5 intentos cada 15 minutos por IP
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutos
-  max: 5,                   // máximo 5 intentos fallidos
+  max: 5,
   message: {
     success: false,
     message: "Demasiados intentos de login. Intenta de nuevo en 15 minutos.",
@@ -51,7 +52,7 @@ router.post(
   login
 );
 
-// Ruta de logout (protegida: solo usuarios autenticados/admin pueden cerrarla)
-router.post("/logout", authAdmin, logout);
+// Ruta de logout (protegida: cualquier usuario autenticado puede cerrar sesión)
+router.post("/logout", authAdmin, logout); // ← usa authRequired en vez de authAdmin
 
 export default router;
