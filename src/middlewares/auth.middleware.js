@@ -5,52 +5,113 @@ export const authAdmin = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
 
-    if (!authHeader?.startsWith("Bearer ")) {
-      return res.status(401).json({ message: "Token requerido" });
+    // 1. Verificar header y formato
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({
+        success: false,
+        message: "Token requerido (formato: Bearer <token>)",
+      });
     }
 
     const token = authHeader.split(" ")[1];
 
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: "Token no encontrado en el header",
+      });
+    }
+
+    // 2. Verificar JWT_SECRET (evita crash silencioso)
+    if (!process.env.JWT_SECRET) {
+      console.error("JWT_SECRET no definido en variables de entorno");
+      return res.status(500).json({
+        success: false,
+        message: "Error interno del servidor",
+      });
+    }
+
+    // 3. Verificar token con manejo detallado
     let decoded;
     try {
-      decoded = jwt.verify(token, process.env.JWT_SECRET);
+      decoded = jwt.verify(token, process.env.JWT_SECRET, {
+        algorithms: ["HS256"], // fuerza el algoritmo esperado
+      });
     } catch (err) {
-      // ← mejora: distinguir entre expirado e inválido
-      const message =
-        err.name === "TokenExpiredError"
-          ? "Token expirado"
-          : "Token inválido";
-      return res.status(401).json({ message });
+      let message = "Token inválido";
+
+      switch (err.name) {
+        case "TokenExpiredError":
+          message = "Token expirado";
+          break;
+        case "JsonWebTokenError":
+          message = "Token mal formado o inválido";
+          break;
+        case "NotBeforeError":
+          message = "Token aún no válido (fecha anterior)";
+          break;
+        default:
+          message = "Error al verificar token";
+      }
+
+      return res.status(401).json({
+        success: false,
+        message,
+      });
     }
 
-    // Opcional: verificar que tenga id (por si el token está mal formado)
+    // 4. Verificar ID en token
     if (!decoded?.id) {
-      return res.status(401).json({ message: "Token mal formado" });
+      return res.status(401).json({
+        success: false,
+        message: "Token mal formado (falta ID de usuario)",
+      });
     }
 
-    // Buscar usuario – select("-password") está perfecto
-    const user = await User.findById(decoded.id).select("-password -__v"); // ← -__v es buena práctica
+    // 5. Buscar usuario (lean + select mínimo)
+    const user = await User.findById(decoded.id)
+      .select("-password -__v -createdAt -updatedAt -resetPasswordToken -resetPasswordExpires")
+      .lean();
 
     if (!user) {
-      return res.status(401).json({ message: "Usuario no encontrado" });
+      return res.status(401).json({
+        success: false,
+        message: "Usuario no encontrado o eliminado",
+      });
     }
 
+    // 6. Verificar rol admin
     if (user.role !== "admin") {
-      return res.status(403).json({ message: "Acceso denegado: requiere rol admin" });
+      return res.status(403).json({
+        success: false,
+        message: "Acceso denegado: se requiere rol de administrador",
+      });
     }
 
-    // Opcional pero recomendado: comprobar si la cuenta está activa/bloqueada
-    // if (!user.isActive) {
-    //   return res.status(403).json({ message: "Cuenta inactiva" });
-    // }
+    // 7. Verificar cuenta activa (muy recomendado)
+    if (user.active === false) {
+      return res.status(403).json({
+        success: false,
+        message: "Cuenta inactiva o bloqueada",
+      });
+    }
 
-    req.user = user;           // ← bien
-    req.token = token;         // ← útil a veces (logout de ese token, blacklist, etc.)
-    req.tokenDecoded = decoded;// ← muy útil para auditoría o refresh tokens
+    // 8. Asignar datos al request
+    req.user = user;
+    req.token = token;
+    req.tokenDecoded = decoded;
 
     next();
   } catch (error) {
-    console.error("AuthAdmin middleware error:", error);
-    return res.status(500).json({ message: "Error de autenticación" });
+    console.error("Error crítico en authAdmin middleware:", {
+      message: error.message,
+      stack: error.stack,
+      name: error.name,
+    });
+
+    return res.status(500).json({
+      success: false,
+      message: "Error interno de autenticación",
+    });
   }
 };

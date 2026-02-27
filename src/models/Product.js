@@ -5,7 +5,8 @@ const productSchema = new mongoose.Schema(
     productNumber: {
       type: Number,
       required: true,
-      unique: true,          // evita duplicados de número de producto
+      unique: true,
+      index: true,  // acelera consultas por número de producto
     },
 
     name: {
@@ -14,13 +15,14 @@ const productSchema = new mongoose.Schema(
       trim: true,
       minlength: [3, "El nombre debe tener al menos 3 caracteres"],
       maxlength: [100, "El nombre no puede superar los 100 caracteres"],
+      index: "text", // permite búsqueda por texto en name
     },
 
     description: {
       type: String,
       default: "",
       trim: true,
-      maxlength: [1000, "La descripción no puede superar los 1000 caracteres"],
+      maxlength: [2000, "La descripción no puede superar los 2000 caracteres"], // subí un poco el límite
     },
 
     price: {
@@ -39,41 +41,54 @@ const productSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "Category",
       required: [true, "La categoría es obligatoria"],
-      index: true,  // mejora rendimiento en consultas por categoría
+      index: true,
     },
 
     images: {
-      type: [String],  // array de URLs (strings)
-      default: [],     // siempre inicia vacío
-      validate: {
-        validator: function (arr) {
-          return arr.every(url => typeof url === "string" && url.trim().startsWith("http"));
+      type: [
+        {
+          url: {
+            type: String,
+            required: true,
+            validate: {
+              validator: v => v.startsWith("http"),
+              message: "La URL de la imagen debe ser válida (http/https)",
+            },
+          },
+          public_id: {
+            type: String,
+            required: true,  // ← muy importante para borrar de Cloudinary
+          },
         },
-        message: "Todas las imágenes deben ser URLs válidas (http/https)",
-      },
+      ],
+      default: [],
     },
 
     active: {
       type: Boolean,
       default: true,
-      index: true,  // útil para consultas rápidas de productos activos
+      index: true,
     },
   },
   {
-    timestamps: true,  // createdAt y updatedAt automáticos
-    toJSON: { virtuals: true },   // incluye virtuals si los agregás después
+    timestamps: true,
+    toJSON: { virtuals: true },
     toObject: { virtuals: true },
   }
 );
 
-// Índices adicionales para rendimiento
-productSchema.index({ name: "text" });               // búsqueda por nombre
-productSchema.index({ category: 1, active: 1 });    // consultas por categoría activa
-productSchema.index({ createdAt: -1 });             // orden por más recientes
+// Índices compuestos y de texto
+productSchema.index({ name: "text", description: "text" }); // búsqueda por texto en nombre y descripción
+productSchema.index({ category: 1, active: 1, createdAt: -1 }); // consultas frecuentes
+productSchema.index({ "images.public_id": 1 }); // si alguna vez querés buscar por public_id
 
-// Virtual para contar imágenes (opcional, pero útil)
+// Virtuals útiles
 productSchema.virtual("imageCount").get(function () {
   return this.images?.length || 0;
+});
+
+productSchema.virtual("firstImage").get(function () {
+  return this.images?.[0]?.url || null;
 });
 
 export default mongoose.model("Product", productSchema);

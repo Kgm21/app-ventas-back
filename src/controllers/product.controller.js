@@ -248,23 +248,73 @@ export const getProductById = async (req, res) => {
   }
 };
 
-// ELIMINAR PRODUCTO (borrado lógico)
+/// ELIMINAR PRODUCTO (borrado lógico + borrar imágenes de Cloudinary)
 export const deleteProduct = async (req, res) => {
   try {
-    const product = await Product.findOneAndUpdate(
-      { _id: req.params.id, active: true },
-      { active: false },
-      { new: true }
-    );
+    const product = await Product.findOne({ _id: req.params.id, active: true });
 
     if (!product) {
-      return res.status(404).json({ success: false, message: "Producto no encontrado o ya eliminado" });
+      return res.status(404).json({
+        success: false,
+        message: "Producto no encontrado o ya eliminado",
+      });
     }
 
-    res.json({ success: true, message: "Producto eliminado" });
+    // Borrar imágenes de Cloudinary si existen
+    if (product.images && product.images.length > 0) {
+      console.log(`Eliminando producto ${product._id} - Intentando borrar ${product.images.length} imágenes...`);
+
+      const deletePromises = product.images.map(async (img) => {
+        let publicId;
+
+        // Caso 1: imagen es objeto { url, public_id }
+        if (typeof img === "object" && img.public_id) {
+          publicId = img.public_id;
+        }
+        // Caso 2: imagen es solo string (URL) → extraemos public_id
+        else if (typeof img === "string") {
+          // Ejemplo URL: https://res.cloudinary.com/dilhutst6/image/upload/v1772043532/carteras/productos/ytsaawyc9jgv1ze5kxmm.jpg
+          // Extraemos: carteras/productos/ytsaawyc9jgv1ze5kxmm
+          const match = img.match(/\/upload\/v\d+\/(.+?)(?:\.[a-z]+)?$/i);
+          publicId = match ? match[1] : null;
+        }
+
+        if (!publicId) {
+          console.warn(`No se pudo extraer public_id de: ${JSON.stringify(img)}`);
+          return;
+        }
+
+        try {
+          const result = await cloudinary.uploader.destroy(publicId);
+          console.log(`Imagen borrada OK: ${publicId} → ${result.result}`);
+        } catch (err) {
+          console.error(`Error borrando ${publicId}:`, err.message);
+          // Continuamos aunque falle una
+        }
+      });
+
+      await Promise.all(deletePromises);
+    }
+
+    // Borrado lógico
+    product.active = false;
+    await product.save();
+
+    // Limpieza opcional: vaciar el array en la DB
+    product.images = [];
+    await product.save();
+
+    res.json({
+      success: true,
+      message: "Producto eliminado correctamente (imágenes borradas de Cloudinary donde fue posible)",
+    });
   } catch (error) {
     console.error("Error al eliminar producto:", error);
-    res.status(500).json({ success: false, message: "Error al eliminar producto" });
+    res.status(500).json({
+      success: false,
+      message: "Error interno al eliminar el producto",
+      error: error.message,
+    });
   }
 };
 
