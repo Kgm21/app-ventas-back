@@ -4,7 +4,7 @@ import { body, validationResult } from "express-validator";
 import rateLimit from "express-rate-limit";
 
 import { login, logout } from "../controllers/auth.controller.js";
-import { authAdmin } from "../middlewares/auth.middleware.js"; // ← CAMBIA A authRequired (más genérico)
+import { authAdmin } from "../middlewares/auth.middleware.js"; // ← USAMOS authAdmin (el que ya tenés exportado)
 
 const router = express.Router();
 
@@ -52,7 +52,7 @@ router.post(
   login
 );
 
-// Ruta de logout (protegida: cualquier usuario autenticado puede cerrar sesión)
-router.post("/logout", authAdmin, logout); // ← usa authRequired en vez de authAdmin
+// Ruta de logout (protegida: solo admin puede cerrar sesión)
+router.post("/logout", authAdmin, logout);
 
 export default router;
