@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 
 // LOGIN
+// LOGIN
 export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -44,33 +45,36 @@ export const login = async (req, res) => {
       });
     }
 
+    // Genera el token JWT
     const token = jwt.sign(
       {
         id: user._id,
+        email: user.email,
         role: user.role,
       },
       process.env.JWT_SECRET,
       {
-        expiresIn: "7d",
+        expiresIn: "7d", // 7 días
         algorithm: "HS256",
-        issuer: process.env.APP_NAME || "tu-app.com",
+        issuer: process.env.APP_NAME || "carteras-app",
       }
     );
 
-    // Cookie httpOnly (segura)
+    // Opcional: cookie httpOnly (más segura, pero si usás Bearer en header, podés omitirla)
     res.cookie("token", token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "strict",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 días
       path: "/",
     });
 
+    // Respuesta con token (esto es lo que faltaba)
     res.json({
       success: true,
       message: "Inicio de sesión exitoso",
+      token, // ← AGREGADO
       role: user.role,
-      // Opcional: datos básicos del usuario (sin datos sensibles)
       user: {
         id: user._id,
         email: user.email,
