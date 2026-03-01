@@ -42,11 +42,12 @@ export const createProduct = async (req, res) => {
   try {
     const { name, price, category, description, stock, images } = req.body;
 
-    if (!name?.trim()) {
+    // Validaciones básicas
+    if (!name || !name.trim()) {
       return res.status(400).json({ success: false, message: "Nombre obligatorio" });
     }
 
-    if (price === undefined || isNaN(Number(price)) || Number(price) < 0) {
+    if (price === undefined || isNaN(price) || Number(price) < 0) {
       return res.status(400).json({ success: false, message: "Precio inválido" });
     }
 
@@ -54,32 +55,25 @@ export const createProduct = async (req, res) => {
       return res.status(400).json({ success: false, message: "Categoría inválida" });
     }
 
-    let imagesData = [];
+    // Procesar imágenes (URLs)
+    const imagesData = Array.isArray(images)
+      ? images
+          .filter(url => typeof url === "string" && url.startsWith("https://"))
+          .map(url => {
+            const public_id = extractPublicIdFromUrl(url);
+            return public_id ? { url, public_id } : null;
+          })
+          .filter(Boolean)
+      : [];
 
-    // 🔥 PRIORIDAD: archivos
-    if (req.files && req.files.length > 0) {
-      for (const file of req.files) {
-        const img = await uploadToCloudinary(file);
-        if (img) imagesData.push(img);
-      }
-    }
-    // 🔁 Fallback: URLs
-    else if (images) {
-      const urls = Array.isArray(images) ? images : [images];
-      imagesData = urls
-        .map((url) => {
-          const public_id = extractPublicIdFromUrl(url);
-          return public_id ? { url, public_id } : null;
-        })
-        .filter(Boolean);
-    }
-
+    // Contador de productos
     const counter = await Counter.findOneAndUpdate(
       { name: "product" },
       { $inc: { seq: 1 } },
       { new: true, upsert: true }
     );
 
+    // Crear producto
     const product = await Product.create({
       productNumber: counter.seq,
       name: name.trim(),
@@ -91,15 +85,12 @@ export const createProduct = async (req, res) => {
       active: true,
     });
 
-    const populated = await Product.findById(product._id).populate("category", "name");
-
-    res.status(201).json({ success: true, data: populated });
+    res.status(201).json({ success: true, data: product });
   } catch (error) {
     console.error("CREATE PRODUCT ERROR:", error);
-    res.status(500).json({ success: false, message: "Error interno", error: error.message });
+    res.status(500).json({ success: false, message: error.message });
   }
 };
-
 /* ======================================================
    ACTUALIZAR PRODUCTO
 ====================================================== */
@@ -108,10 +99,17 @@ export const updateProduct = async (req, res) => {
   try {
     const updateData = {};
 
-    if (req.body.name !== undefined) updateData.name = req.body.name.trim();
-    if (req.body.price !== undefined) updateData.price = Number(req.body.price);
-    if (req.body.description !== undefined) updateData.description = req.body.description.trim();
-    if (req.body.stock !== undefined) updateData.stock = Number(req.body.stock);
+    if (req.body.name !== undefined)
+      updateData.name = req.body.name.trim();
+
+    if (req.body.price !== undefined)
+      updateData.price = Number(req.body.price);
+
+    if (req.body.description !== undefined)
+      updateData.description = req.body.description.trim();
+
+    if (req.body.stock !== undefined)
+      updateData.stock = Number(req.body.stock);
 
     if (req.body.category !== undefined) {
       if (!mongoose.Types.ObjectId.isValid(req.body.category)) {
@@ -120,13 +118,30 @@ export const updateProduct = async (req, res) => {
       updateData.category = req.body.category;
     }
 
-    // 🔥 Reemplazar imágenes si vienen nuevas
+    /* =====================================================
+       IMÁGENES DESDE URLS (JSON)
+    ===================================================== */
+    if (Array.isArray(req.body.images)) {
+      updateData.images = req.body.images
+        .filter(url => typeof url === "string" && url.startsWith("https://"))
+        .map(url => {
+          const public_id = extractPublicIdFromUrl(url);
+          return public_id ? { url, public_id } : null;
+        })
+        .filter(Boolean);
+    }
+
+    /* =====================================================
+       IMÁGENES DESDE ARCHIVOS (multipart/form-data)
+    ===================================================== */
     if (req.files && req.files.length > 0) {
       const imagesData = [];
+
       for (const file of req.files) {
         const img = await uploadToCloudinary(file);
         if (img) imagesData.push(img);
       }
+
       updateData.images = imagesData;
     }
 
@@ -143,7 +158,7 @@ export const updateProduct = async (req, res) => {
     res.json({ success: true, data: product });
   } catch (error) {
     console.error("UPDATE PRODUCT ERROR:", error);
-    res.status(500).json({ success: false, message: "Error interno", error: error.message });
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
