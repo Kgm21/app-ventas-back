@@ -4,14 +4,14 @@ import { body, validationResult } from "express-validator";
 import rateLimit from "express-rate-limit";
 
 import { login, logout } from "../controllers/auth.controller.js";
-import { authAdmin } from "../middlewares/auth.middleware.js"; // ← USAMOS authAdmin (el que ya tenés exportado)
+import { authAdmin } from "../middlewares/auth.middleware.js"; // middleware que valida token + rol admin
 
 const router = express.Router();
 
-// Rate limit para login: 5 intentos cada 15 minutos por IP
+// Rate limit para proteger contra ataques de fuerza bruta en login
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutos
-  max: 5,
+  max: 5,                   // máximo 5 intentos fallidos por IP
   message: {
     success: false,
     message: "Demasiados intentos de login. Intenta de nuevo en 15 minutos.",
@@ -33,7 +33,7 @@ const loginValidation = [
     .isLength({ min: 6 }).withMessage("La contraseña debe tener al menos 6 caracteres"),
 ];
 
-// Ruta de login (pública, con rate-limit y validación)
+// Ruta de login (pública, protegida por rate-limit y validación)
 router.post(
   "/login",
   loginLimiter,
@@ -52,7 +52,7 @@ router.post(
   login
 );
 
-// Ruta de logout (protegida: solo admin puede cerrar sesión)
+// Ruta de logout (protegida: solo usuarios con rol admin pueden cerrarla)
 router.post("/logout", authAdmin, logout);
 
 export default router;

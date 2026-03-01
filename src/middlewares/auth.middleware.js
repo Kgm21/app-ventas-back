@@ -1,3 +1,4 @@
+// src/middlewares/auth.middleware.js
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
 
@@ -22,7 +23,7 @@ export const authAdmin = async (req, res, next) => {
       });
     }
 
-    // 2. Verificar que exista JWT_SECRET
+    // 2. Verificar JWT_SECRET
     if (!process.env.JWT_SECRET) {
       console.error("JWT_SECRET no definido en variables de entorno");
       return res.status(500).json({
@@ -31,7 +32,7 @@ export const authAdmin = async (req, res, next) => {
       });
     }
 
-    // 3. Verificar token con manejo detallado de errores
+    // 3. Verificar y decodificar token
     let decoded;
     try {
       decoded = jwt.verify(token, process.env.JWT_SECRET, {
@@ -100,11 +101,11 @@ export const authAdmin = async (req, res, next) => {
     req.user = user;
     req.token = token;
     req.tokenDecoded = decoded;
-    req.isAdmin = true; // ← bandera útil para rutas que requieran admin estricto
+    req.isAdmin = true; // bandera útil para rutas que requieran admin estricto
 
     next();
   } catch (error) {
-    // Log sin exponer stack en producción (seguridad)
+    // Log seguro: no exponemos stack en producción
     console.error("Error crítico en authAdmin middleware:", {
       message: error.message,
       name: error.name,

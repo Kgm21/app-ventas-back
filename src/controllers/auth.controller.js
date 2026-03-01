@@ -18,7 +18,7 @@ export const login = async (req, res) => {
     const emailNormalized = email.toLowerCase().trim();
 
     const user = await User.findOne({ email: emailNormalized })
-      .select("+password +role +email +name") // +name si lo tenés
+      .select("+password +role +email +name") // +name si existe en el modelo
       .lean();
 
     if (!user) {
@@ -54,7 +54,7 @@ export const login = async (req, res) => {
       },
       process.env.JWT_SECRET,
       {
-        expiresIn: "7d", // 7 días
+        expiresIn: "7d", // puedes cambiar a "1h", "30d", etc.
         algorithm: "HS256",
       }
     );
@@ -62,7 +62,7 @@ export const login = async (req, res) => {
     // Cookie httpOnly segura (se envía automáticamente con withCredentials: true)
     res.cookie("token", token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: process.env.NODE_ENV === "production", // true en producción (HTTPS)
       sameSite: "strict",
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 días
       path: "/",
@@ -105,7 +105,7 @@ export const logout = (req, res) => {
   });
 };
 
-// OBTENER USUARIO ACTUAL (/me)
+// OBTENER USUARIO ACTUAL (/me) - ruta protegida
 export const me = async (req, res) => {
   try {
     // req.user viene del middleware auth (jwt.verify)
