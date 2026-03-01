@@ -42,53 +42,69 @@ export const createProduct = async (req, res) => {
   try {
     const { name, price, category, description, stock, images } = req.body;
 
-    // Validaciones básicas
+    // Validaciones
     if (!name || !name.trim()) {
-      return res.status(400).json({ success: false, message: "Nombre obligatorio" });
+      return res.status(400).json({
+        success: false,
+        message: "Nombre obligatorio",
+      });
     }
 
-    if (price === undefined || isNaN(price) || Number(price) < 0) {
-      return res.status(400).json({ success: false, message: "Precio inválido" });
+    if (price === undefined || isNaN(Number(price)) || Number(price) < 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Precio inválido",
+      });
     }
 
     if (!mongoose.Types.ObjectId.isValid(category)) {
-      return res.status(400).json({ success: false, message: "Categoría inválida" });
+      return res.status(400).json({
+        success: false,
+        message: "Categoría inválida",
+      });
     }
 
-    // Procesar imágenes (URLs)
-    const imagesData = Array.isArray(images)
-      ? images
-          .filter(url => typeof url === "string" && url.startsWith("https://"))
-          .map(url => {
-            const public_id = extractPublicIdFromUrl(url);
-            return public_id ? { url, public_id } : null;
-          })
-          .filter(Boolean)
-      : [];
+    // ✅ Imágenes SOLO por URL
+    let imagesData = [];
 
-    // Contador de productos
+    if (Array.isArray(images)) {
+      imagesData = images
+        .filter(url => typeof url === "string" && url.startsWith("https://"))
+        .map(url => ({
+          url,
+          public_id: extractPublicIdFromUrl(url) || null,
+        }));
+    }
+
+    // Contador
     const counter = await Counter.findOneAndUpdate(
       { name: "product" },
       { $inc: { seq: 1 } },
       { new: true, upsert: true }
     );
 
-    // Crear producto
     const product = await Product.create({
       productNumber: counter.seq,
       name: name.trim(),
-      price: Number(price),
-      category,
       description: description?.trim() || "",
+      price: Number(price),
       stock: Number(stock) || 0,
+      category,
       images: imagesData,
       active: true,
     });
 
-    res.status(201).json({ success: true, data: product });
+    return res.status(201).json({
+      success: true,
+      data: product,
+    });
+
   } catch (error) {
     console.error("CREATE PRODUCT ERROR:", error);
-    res.status(500).json({ success: false, message: error.message });
+    return res.status(500).json({
+      success: false,
+      message: "Error creando producto",
+    });
   }
 };
 /* ======================================================
