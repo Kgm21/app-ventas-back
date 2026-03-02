@@ -1,5 +1,7 @@
 import Category from "../models/Category.js";
+import Product from "../models/Product.js";
 
+// Crear categoría
 export const createCategory = async (req, res) => {
   try {
     const { name } = req.body;
@@ -13,7 +15,7 @@ export const createCategory = async (req, res) => {
 
     const nameNormalized = name.trim();
 
-    // Evitar duplicados
+    // Evitar duplicados (case-insensitive)
     const exists = await Category.findOne({
       name: new RegExp(`^${nameNormalized}$`, "i"),
     });
@@ -43,15 +45,26 @@ export const createCategory = async (req, res) => {
   }
 };
 
+// Obtener categorías con cantidad de productos
 export const getCategories = async (req, res) => {
   try {
     const categories = await Category.find({ active: true })
       .sort({ name: 1 })
       .lean();
 
+    const categoriesWithCount = await Promise.all(
+      categories.map(async (cat) => {
+        const count = await Product.countDocuments({ category: cat._id });
+        return {
+          ...cat,
+          productCount: count,
+        };
+      })
+    );
+
     res.json({
       success: true,
-      data: categories,
+      data: categoriesWithCount,
     });
   } catch (error) {
     console.error("Error getCategories:", error);
