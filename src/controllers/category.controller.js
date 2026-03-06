@@ -1,10 +1,20 @@
 import Category from "../models/Category.js";
 import Product from "../models/Product.js";
 
-// Crear categoría
+// función simple para crear slug
+const generateSlug = (text) =>
+  text
+    .toLowerCase()
+    .trim()
+    .replace(/ /g, "-")
+    .replace(/[^\w-]+/g, "");
+
+// ======================
+// CREAR CATEGORÍA
+// ======================
 export const createCategory = async (req, res) => {
   try {
-    const { name } = req.body;
+    const { name, parent } = req.body;
 
     if (!name || !name.trim()) {
       return res.status(400).json({
@@ -14,10 +24,12 @@ export const createCategory = async (req, res) => {
     }
 
     const nameNormalized = name.trim();
+    const slug = generateSlug(nameNormalized);
 
-    // Evitar duplicados (case-insensitive)
+    // evitar duplicados
     const exists = await Category.findOne({
       name: new RegExp(`^${nameNormalized}$`, "i"),
+      parent: parent || null,
     });
 
     if (exists) {
@@ -29,6 +41,8 @@ export const createCategory = async (req, res) => {
 
     const category = await Category.create({
       name: nameNormalized,
+      slug,
+      parent: parent || null,
       active: true,
     });
 
@@ -45,16 +59,20 @@ export const createCategory = async (req, res) => {
   }
 };
 
-// Obtener categorías con cantidad de productos
+// ======================
+// OBTENER CATEGORÍAS
+// ======================
 export const getCategories = async (req, res) => {
   try {
     const categories = await Category.find({ active: true })
+      .populate("parent", "name")
       .sort({ name: 1 })
       .lean();
 
     const categoriesWithCount = await Promise.all(
       categories.map(async (cat) => {
         const count = await Product.countDocuments({ category: cat._id });
+
         return {
           ...cat,
           productCount: count,
@@ -75,13 +93,16 @@ export const getCategories = async (req, res) => {
   }
 };
 
-// Editar categoría
+// ======================
+// ACTUALIZAR CATEGORÍA
+// ======================
 export const updateCategory = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, active } = req.body;
+    const { name, active, parent } = req.body;
 
     const category = await Category.findById(id);
+
     if (!category) {
       return res.status(404).json({
         success: false,
@@ -89,8 +110,18 @@ export const updateCategory = async (req, res) => {
       });
     }
 
-    if (name) category.name = name.trim();
-    if (active !== undefined) category.active = active;
+    if (name) {
+      category.name = name.trim();
+      category.slug = generateSlug(name);
+    }
+
+    if (active !== undefined) {
+      category.active = active;
+    }
+
+    if (parent !== undefined) {
+      category.parent = parent || null;
+    }
 
     await category.save();
 
@@ -107,10 +138,22 @@ export const updateCategory = async (req, res) => {
   }
 };
 
-// Eliminar categoría
+// ======================
+// ELIMINAR CATEGORÍA
+// ======================
 export const deleteCategory = async (req, res) => {
   try {
     const { id } = req.params;
+
+    // verificar productos
+    const products = await Product.countDocuments({ category: id });
+
+    if (products > 0) {
+      return res.status(400).json({
+        success: false,
+        message: "No se puede eliminar una categoría con productos",
+      });
+    }
 
     const category = await Category.findByIdAndDelete(id);
 

@@ -10,6 +10,7 @@ import {
   deleteProduct,
   getWhatsappConsultLink,
 } from "../controllers/product.controller.js";
+
 import { authAdmin } from "../middlewares/auth.middleware.js";
 
 const router = Router();
@@ -18,7 +19,10 @@ const router = Router();
 const productLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 20,
-  message: { success: false, message: "Demasiadas peticiones. Intenta más tarde." },
+  message: {
+    success: false,
+    message: "Demasiadas peticiones. Intenta más tarde.",
+  },
 });
 
 // Helmet
@@ -34,25 +38,19 @@ router.use(
   })
 );
 
-// Rutas públicas
+// =====================
+// RUTAS PÚBLICAS
+// =====================
 router.get("/", getProducts);
 router.get("/:id", getProductById);
 router.get("/:id/whatsapp-consult", getWhatsappConsultLink);
 
-// Rutas privadas (ADMIN)
-router.post(
-  "/",
-  authAdmin,
-  productLimiter,
-  createProduct
-);
+// =====================
+// RUTAS PRIVADAS (ADMIN)
+// =====================
+router.post("/", authAdmin, productLimiter, createProduct);
 
-router.put(
-  "/:id",
-  authAdmin,
-  productLimiter,
-  updateProduct
-);
+router.put("/:id", authAdmin, productLimiter, updateProduct);
 
 router.delete("/:id", authAdmin, deleteProduct);
 
