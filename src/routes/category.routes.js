@@ -1,10 +1,13 @@
+
 import { Router } from "express";
 import rateLimit from "express-rate-limit";
 import helmet from "helmet";
 
 import {
   createCategory,
+  getCategoryBreadcrumb,
   getCategories,
+  getCategoriesFlat,
   updateCategory,
   deleteCategory,
 } from "../controllers/category.controller.js";
@@ -12,6 +15,10 @@ import {
 import { authAdmin } from "../middlewares/auth.middleware.js";
 
 const router = Router();
+
+// =====================
+// SEGURIDAD
+// =====================
 
 // Rate limit (solo admin)
 const categoryLimiter = rateLimit({
@@ -37,15 +44,24 @@ router.use(
 // =====================
 // RUTAS PÚBLICAS
 // =====================
+
+// Árbol de categorías (para menú tienda)
 router.get("/", getCategories);
+
+// Lista plana (para panel admin)
+router.get("/flat", getCategoriesFlat);
+// Breadcrumb de categoría
+router.get("/breadcrumb/:id", getCategoryBreadcrumb);
 
 // =====================
 // RUTAS ADMIN
 // =====================
+
 router.post("/", authAdmin, categoryLimiter, createCategory);
 
 router.put("/:id", authAdmin, categoryLimiter, updateCategory);
 
-router.delete("/:id", authAdmin, deleteCategory);
+router.delete("/:id", authAdmin, categoryLimiter, deleteCategory);
 
 export default router;
+
