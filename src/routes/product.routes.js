@@ -31,8 +31,15 @@ router.use(
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        imgSrc: ["'self'", "https://res.cloudinary.com"],
+        imgSrc: [
+          "'self'",
+          "data:",
+          "blob:",
+          "https://res.cloudinary.com",
+          "https://*.cloudinary.com"
+        ],
         scriptSrc: ["'self'", "'unsafe-inline'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
       },
     },
   })
@@ -42,16 +49,14 @@ router.use(
 // RUTAS PÚBLICAS
 // =====================
 router.get("/", getProducts);
-router.get("/:id", getProductById);
 router.get("/:id/whatsapp-consult", getWhatsappConsultLink);
+router.get("/:id", getProductById);
 
 // =====================
-// RUTAS PRIVADAS (ADMIN)
+// RUTAS PRIVADAS
 // =====================
 router.post("/", authAdmin, productLimiter, createProduct);
-
 router.put("/:id", authAdmin, productLimiter, updateProduct);
-
 router.delete("/:id", authAdmin, deleteProduct);
 
 export default router;
