@@ -1,5 +1,5 @@
+// controllers/productController.js
 import mongoose from "mongoose";
-import Counter from "../models/Counter.js";
 import Product from "../models/Product.js";
 import cloudinary from "../config/cloudinary.js";
 
@@ -23,12 +23,10 @@ const uploadToCloudinary = async (file) => {
       { folder: "carteras/productos", resource_type: "image" },
       (error, result) => {
         if (error) reject(error);
-        else {
-          resolve({
-            url: result.secure_url,
-            public_id: result.public_id,
-          });
-        }
+        else resolve({
+          url: result.secure_url,
+          public_id: result.public_id,
+        });
       }
     ).end(file.buffer);
   });
@@ -42,49 +40,31 @@ export const createProduct = async (req, res) => {
   try {
     const { name, price, category, description, stock, images } = req.body;
 
-    // Validaciones
-    if (!name || !name.trim()) {
-      return res.status(400).json({
-        success: false,
-        message: "Nombre obligatorio",
-      });
+    // Validaciones básicas
+    if (!name?.trim()) {
+      return res.status(400).json({ success: false, message: "Nombre obligatorio" });
     }
 
-    if (price === undefined || isNaN(Number(price)) || Number(price) < 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Precio inválido",
-      });
+    if (price == null || isNaN(Number(price)) || Number(price) < 0) {
+      return res.status(400).json({ success: false, message: "Precio inválido" });
     }
 
     if (!mongoose.Types.ObjectId.isValid(category)) {
-      return res.status(400).json({
-        success: false,
-        message: "Categoría inválida",
-      });
+      return res.status(400).json({ success: false, message: "Categoría inválida" });
     }
 
-    // ✅ Imágenes SOLO por URL
+    // Procesar imágenes solo por URL (como pediste)
     let imagesData = [];
-
     if (Array.isArray(images)) {
       imagesData = images
-        .filter(url => typeof url === "string" && url.startsWith("https://"))
-        .map(url => ({
+        .filter((url) => typeof url === "string" && url.startsWith("https://"))
+        .map((url) => ({
           url,
           public_id: extractPublicIdFromUrl(url) || null,
         }));
     }
 
-    // Contador
-    const counter = await Counter.findOneAndUpdate(
-      { name: "product" },
-      { $inc: { seq: 1 } },
-      { new: true, upsert: true }
-    );
-
     const product = await Product.create({
-      productNumber: counter.seq,
       name: name.trim(),
       description: description?.trim() || "",
       price: Number(price),
@@ -98,15 +78,16 @@ export const createProduct = async (req, res) => {
       success: true,
       data: product,
     });
-
   } catch (error) {
     console.error("CREATE PRODUCT ERROR:", error);
     return res.status(500).json({
       success: false,
-      message: "Error creando producto",
+      message: "Error al crear producto",
+      error: error.message,
     });
   }
 };
+
 /* ======================================================
    ACTUALIZAR PRODUCTO
 ====================================================== */
@@ -115,17 +96,10 @@ export const updateProduct = async (req, res) => {
   try {
     const updateData = {};
 
-    if (req.body.name !== undefined)
-      updateData.name = req.body.name.trim();
-
-    if (req.body.price !== undefined)
-      updateData.price = Number(req.body.price);
-
-    if (req.body.description !== undefined)
-      updateData.description = req.body.description.trim();
-
-    if (req.body.stock !== undefined)
-      updateData.stock = Number(req.body.stock);
+    if (req.body.name !== undefined) updateData.name = req.body.name.trim();
+    if (req.body.price !== undefined) updateData.price = Number(req.body.price);
+    if (req.body.description !== undefined) updateData.description = req.body.description.trim();
+    if (req.body.stock !== undefined) updateData.stock = Number(req.body.stock);
 
     if (req.body.category !== undefined) {
       if (!mongoose.Types.ObjectId.isValid(req.body.category)) {
@@ -134,30 +108,24 @@ export const updateProduct = async (req, res) => {
       updateData.category = req.body.category;
     }
 
-    /* =====================================================
-       IMÁGENES DESDE URLS (JSON)
-    ===================================================== */
+    // Imágenes desde URLs (JSON)
     if (Array.isArray(req.body.images)) {
       updateData.images = req.body.images
-        .filter(url => typeof url === "string" && url.startsWith("https://"))
-        .map(url => {
-          const public_id = extractPublicIdFromUrl(url);
-          return public_id ? { url, public_id } : null;
-        })
+        .filter((url) => typeof url === "string" && url.startsWith("https://"))
+        .map((url) => ({
+          url,
+          public_id: extractPublicIdFromUrl(url) || null,
+        }))
         .filter(Boolean);
     }
 
-    /* =====================================================
-       IMÁGENES DESDE ARCHIVOS (multipart/form-data)
-    ===================================================== */
-    if (req.files && req.files.length > 0) {
+    // Imágenes desde archivos (multipart)
+    if (req.files?.length > 0) {
       const imagesData = [];
-
       for (const file of req.files) {
         const img = await uploadToCloudinary(file);
         if (img) imagesData.push(img);
       }
-
       updateData.images = imagesData;
     }
 
@@ -221,11 +189,13 @@ export const getProducts = async (req, res) => {
 
 export const getProductById = async (req, res) => {
   try {
-    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({ success: false, message: "ID inválido" });
     }
 
-    const product = await Product.findOne({ _id: req.params.id, active: true })
+    const product = await Product.findOne({ _id: id, active: true })
       .populate("category", "name")
       .lean();
 
@@ -252,9 +222,9 @@ export const deleteProduct = async (req, res) => {
       return res.status(404).json({ success: false, message: "Producto no encontrado" });
     }
 
-    // Borrar imágenes en Cloudinary
+    // Borrar imágenes de Cloudinary
     if (product.images?.length) {
-      await Promise.all(
+      await Promise.allSettled(
         product.images.map((img) =>
           cloudinary.uploader.destroy(img.public_id).catch(() => null)
         )
@@ -273,35 +243,64 @@ export const deleteProduct = async (req, res) => {
 };
 
 /* ======================================================
-   LINK WHATSAPP
+   LINK WHATSAPP - CONSULTA SIMPLE
 ====================================================== */
 
 export const getWhatsappConsultLink = async (req, res) => {
   try {
-    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
-      return res.status(400).json({ success: false, message: "ID inválido" });
+    const { id } = req.params;
+
+    // Validar ID
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "ID de producto inválido",
+      });
     }
 
-    const product = await Product.findOne({ _id: req.params.id, active: true }).lean();
+    // Buscar producto activo
+    const product = await Product.findOne({ _id: id, active: true }).lean();
+
     if (!product) {
-      return res.status(404).json({ success: false, message: "Producto no encontrado" });
+      return res.status(404).json({
+        success: false,
+        message: "Producto no encontrado o no disponible",
+      });
     }
 
-    const number = process.env.WHATSAPP_NUMBER;
-    if (!number) {
-      return res.status(500).json({ success: false, message: "WhatsApp no configurado" });
+    // Número de WhatsApp desde .env
+    const whatsappNumber = process.env.WHATSAPP_NUMBER?.trim();
+
+    if (!whatsappNumber) {
+      console.error("WHATSAPP_NUMBER no está configurado en .env");
+      return res.status(500).json({
+        success: false,
+        message: "Servicio de WhatsApp no configurado en el servidor",
+      });
     }
 
-    const message = `Hola, quiero consultar por este producto:
-Producto: ${product.name}
-Precio: $${product.price.toLocaleString("es-AR")}
-¿Hay stock disponible?`;
+    // Mensaje prearmado (simple y natural)
+    const message = `¡Hola! Estoy interesado en este producto:\n\n` +
+                    `Producto: ${product.name}\n` +
+                    `Precio: $${product.price.toLocaleString("es-AR")}\n` +
+                    `ID: ${product._id}\n\n` +
+                    `¿Tenés stock disponible?\n` +
+                    `¿En qué colores/talles lo tenés?\n` +
+                    `Gracias de antemano! 😊`;
 
-    const url = `https://wa.me/${number}?text=${encodeURIComponent(message)}`;
+    const whatsappUrl = `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(message)}`;
 
-    res.json({ success: true, whatsappUrl: url });
+    return res.status(200).json({
+      success: true,
+      whatsappUrl,
+      productName: product.name,
+      productPrice: product.price,
+    });
   } catch (error) {
-    console.error("WHATSAPP ERROR:", error);
-    res.status(500).json({ success: false, message: "Error interno" });
+    console.error("Error generando link de WhatsApp:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Error interno del servidor",
+    });
   }
 };
