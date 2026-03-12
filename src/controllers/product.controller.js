@@ -286,7 +286,7 @@ export const getWhatsappConsultLink = async (req, res) => {
                     `ID: ${product._id}\n\n` +
                     `¿Tenés stock disponible?\n` +
                     `¿En qué colores/talles lo tenés?\n` +
-                    `Gracias de antemano! 😊`;
+                    `Gracias de antemano! `;
 
     const whatsappUrl = `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(message)}`;
 
