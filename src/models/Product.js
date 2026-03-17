@@ -18,12 +18,13 @@ const productSchema = new mongoose.Schema(
       index: "text",
     },
 
-    description: {
-      type: String,
-      default: "",
-      trim: true,
-      maxlength: [2000, "La descripción no puede superar los 2000 caracteres"],
-    },
+  description: {
+  type: String,
+  required: [true, "La descripción del producto es obligatoria"],
+  trim: true,
+  minlength: [20, "La descripción debe tener al menos 20 caracteres para ser útil"],
+  maxlength: [3000, "La descripción no puede superar los 3000 caracteres"],
+},
 
     price: {
       type: Number,
