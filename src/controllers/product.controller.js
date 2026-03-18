@@ -36,6 +36,10 @@ const uploadToCloudinary = async (file) => {
    CREAR PRODUCTO
 ====================================================== */
 
+/* ======================================================
+   CREAR PRODUCTO
+====================================================== */
+
 export const createProduct = async (req, res) => {
   try {
     const { name, price, category, description, stock, images } = req.body;
@@ -53,7 +57,7 @@ export const createProduct = async (req, res) => {
       return res.status(400).json({ success: false, message: "Categoría inválida" });
     }
 
-    // Procesar imágenes solo por URL (como pediste)
+    // Procesar imágenes solo por URL
     let imagesData = [];
     if (Array.isArray(images)) {
       imagesData = images
@@ -64,7 +68,8 @@ export const createProduct = async (req, res) => {
         }));
     }
 
-    const product = await Product.create({
+    // Usar new + save para que se ejecute el pre-save hook del schema
+    const product = new Product({
       name: name.trim(),
       description: description?.trim() || "",
       price: Number(price),
@@ -73,6 +78,8 @@ export const createProduct = async (req, res) => {
       images: imagesData,
       active: true,
     });
+
+    await product.save(); // aquí se dispara el pre("save") y se autogenera productNumber
 
     return res.status(201).json({
       success: true,
