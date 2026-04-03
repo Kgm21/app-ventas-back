@@ -1,5 +1,5 @@
 import mongoose from "mongoose";
-import order from "../models/order.js"; // 🔥 lo dejamos así como querés
+import order from "../models/Order.js"; // 🔥 lo dejamos así como querés
 import Product from "../models/Product.js";
 
 /* ======================================================
