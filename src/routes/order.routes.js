@@ -6,9 +6,10 @@ import {
   createOrder,
   getOrders,
   getOrderById,
+  updateOrder,          // ✅ NUEVO
   updateOrderStatus,
   cancelOrder,
-  addPayment // 🔥 IMPORTANTE
+  addPayment
 } from "../controllers/order.controller.js";
 
 import { authAdmin } from "../middlewares/auth.middleware.js";
@@ -52,11 +53,16 @@ router.get("/", authAdmin, orderLimiter, getOrders);
 
 router.get("/:id", authAdmin, orderLimiter, getOrderById);
 
+/* ✅ EDITAR PEDIDO */
+router.put("/:id", authAdmin, orderLimiter, updateOrder);
+
+/* CAMBIAR ESTADO */
 router.put("/:id/status", authAdmin, orderLimiter, updateOrderStatus);
 
-// 🔥 ESTA ES LA QUE TE FALTABA
+/* AGREGAR PAGO */
 router.post("/:id/payment", authAdmin, orderLimiter, addPayment);
 
+/* CANCELAR */
 router.put("/:id/cancel", authAdmin, orderLimiter, cancelOrder);
 
 export default router;

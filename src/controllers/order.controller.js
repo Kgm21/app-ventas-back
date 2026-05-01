@@ -1,5 +1,5 @@
 import mongoose from "mongoose";
-import order from "../models/Order.js"; // 🔥 lo dejamos así como querés
+import order from "../models/Order.js";
 import Product from "../models/Product.js";
 
 /* ======================================================
@@ -24,10 +24,8 @@ export const createOrder = async (req, res) => {
     const products = [];
 
     for (const item of items) {
-
-      // 🔵 PRODUCTO DEL CATÁLOGO
+      /* PRODUCTO CATÁLOGO */
       if (item.product) {
-
         if (!mongoose.Types.ObjectId.isValid(item.product)) {
           throw new Error("ID de producto inválido");
         }
@@ -42,7 +40,6 @@ export const createOrder = async (req, res) => {
           throw new Error(`Stock insuficiente para ${product.name}`);
         }
 
-        // descontar stock
         product.stock -= item.quantity;
         await product.save({ session });
 
@@ -58,8 +55,7 @@ export const createOrder = async (req, res) => {
         });
 
       } else {
-        // 🟣 PRODUCTO MANUAL (IMPRENTA)
-
+        /* PRODUCTO MANUAL */
         if (!item.name || !item.price || !item.quantity) {
           throw new Error("Producto manual incompleto");
         }
@@ -75,8 +71,6 @@ export const createOrder = async (req, res) => {
         });
       }
     }
-
-    /* ================= PAGOS ================= */
 
     const payments = [];
 
@@ -125,7 +119,65 @@ export const createOrder = async (req, res) => {
 };
 
 /* ======================================================
-   LISTAR ÓRDENES
+   EDITAR ORDEN
+====================================================== */
+export const updateOrder = async (req, res) => {
+  try {
+    const { customer, products } = req.body;
+
+    const foundOrder = await order.findById(req.params.id);
+
+    if (!foundOrder) {
+      return res.status(404).json({
+        success: false,
+        message: "Orden no encontrada",
+      });
+    }
+
+    /* CLIENTE */
+    if (customer) {
+      foundOrder.customer = {
+        ...foundOrder.customer,
+        ...customer,
+      };
+    }
+
+    /* PRODUCTOS */
+    if (products && Array.isArray(products)) {
+      const cleanProducts = products.map((p) => ({
+        type: "custom",
+        name: p.name,
+        price: Number(p.price),
+        quantity: Number(p.quantity),
+      }));
+
+      foundOrder.products = cleanProducts;
+
+      foundOrder.total = cleanProducts.reduce(
+        (acc, item) => acc + item.price * item.quantity,
+        0
+      );
+    }
+
+    await foundOrder.save();
+
+    res.json({
+      success: true,
+      data: foundOrder,
+    });
+
+  } catch (error) {
+    console.error("UPDATE ORDER ERROR:", error);
+
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+/* ======================================================
+   LISTAR ORDENES
 ====================================================== */
 export const getOrders = async (req, res) => {
   try {
@@ -140,7 +192,6 @@ export const getOrders = async (req, res) => {
     });
 
   } catch (error) {
-    console.error("GET ORDERS ERROR:", error);
     res.status(500).json({
       success: false,
       message: "Error al obtener órdenes",
@@ -149,20 +200,11 @@ export const getOrders = async (req, res) => {
 };
 
 /* ======================================================
-   OBTENER ORDEN POR ID
+   OBTENER ORDEN
 ====================================================== */
 export const getOrderById = async (req, res) => {
   try {
-    const { id } = req.params;
-
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({
-        success: false,
-        message: "ID inválido",
-      });
-    }
-
-    const foundOrder = await order.findById(id)
+    const foundOrder = await order.findById(req.params.id)
       .populate("products.product", "name price")
       .lean();
 
@@ -179,7 +221,6 @@ export const getOrderById = async (req, res) => {
     });
 
   } catch (error) {
-    console.error("GET ORDER ERROR:", error);
     res.status(500).json({
       success: false,
       message: "Error interno",
@@ -193,15 +234,6 @@ export const getOrderById = async (req, res) => {
 export const updateOrderStatus = async (req, res) => {
   try {
     const { status } = req.body;
-
-    const validStatuses = ["pending", "confirmed", "shipped", "delivered", "cancelled"];
-
-    if (!validStatuses.includes(status)) {
-      return res.status(400).json({
-        success: false,
-        message: "Estado inválido",
-      });
-    }
 
     const foundOrder = await order.findById(req.params.id);
 
@@ -221,7 +253,6 @@ export const updateOrderStatus = async (req, res) => {
     });
 
   } catch (error) {
-    console.error("UPDATE ORDER STATUS ERROR:", error);
     res.status(500).json({
       success: false,
       message: "Error al actualizar estado",
@@ -236,26 +267,12 @@ export const addPayment = async (req, res) => {
   try {
     const { amount, method, note } = req.body;
 
-    if (!amount || amount <= 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Monto inválido",
-      });
-    }
-
     const foundOrder = await order.findById(req.params.id);
 
     if (!foundOrder) {
       return res.status(404).json({
         success: false,
         message: "Orden no encontrada",
-      });
-    }
-
-    if (foundOrder.paidAmount + amount > foundOrder.total) {
-      return res.status(400).json({
-        success: false,
-        message: "El pago excede el total de la orden",
       });
     }
 
@@ -273,7 +290,6 @@ export const addPayment = async (req, res) => {
     });
 
   } catch (error) {
-    console.error("ADD PAYMENT ERROR:", error);
     res.status(500).json({
       success: false,
       message: "Error al agregar pago",
@@ -285,46 +301,28 @@ export const addPayment = async (req, res) => {
    CANCELAR ORDEN
 ====================================================== */
 export const cancelOrder = async (req, res) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
-
   try {
-    const foundOrder = await order.findById(req.params.id).session(session);
+    const foundOrder = await order.findById(req.params.id);
 
-    if (!foundOrder) throw new Error("Orden no encontrada");
-    if (foundOrder.status === "cancelled") throw new Error("La orden ya está cancelada");
-
-    for (const item of foundOrder.products) {
-      if (!item.product) continue; // 🔥 evita romper con productos manuales
-
-      const product = await Product.findById(item.product).session(session);
-
-      if (product) {
-        product.stock += item.quantity;
-        await product.save({ session });
-      }
+    if (!foundOrder) {
+      return res.status(404).json({
+        success: false,
+        message: "Orden no encontrada",
+      });
     }
 
     foundOrder.status = "cancelled";
-    await foundOrder.save({ session });
-
-    await session.commitTransaction();
-    session.endSession();
+    await foundOrder.save();
 
     res.json({
       success: true,
-      message: "Orden cancelada y stock restaurado",
+      message: "Orden cancelada",
     });
 
   } catch (error) {
-    await session.abortTransaction();
-    session.endSession();
-
-    console.error("CANCEL ORDER ERROR:", error);
-
     res.status(500).json({
       success: false,
-      message: error.message,
+      message: "Error al cancelar orden",
     });
   }
 };
