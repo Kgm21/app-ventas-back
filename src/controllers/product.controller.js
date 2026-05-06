@@ -32,32 +32,27 @@ const uploadToCloudinary = async (file) => {
   });
 };
 
-/* ======================================================
-   CREAR PRODUCTO
-====================================================== */
-
-/* ======================================================
-   CREAR PRODUCTO
-====================================================== */
-
 export const createProduct = async (req, res) => {
   try {
     const { name, price, category, description, stock, images } = req.body;
 
     // Validaciones básicas
     if (!name?.trim()) {
-      return res.status(400).json({ success: false, message: "Nombre obligatorio" });
+      return res.status(400).json({ success: false, message: "El nombre es obligatorio" });
     }
 
     if (price == null || isNaN(Number(price)) || Number(price) < 0) {
-      return res.status(400).json({ success: false, message: "Precio inválido" });
+      return res.status(400).json({ success: false, message: "El precio debe ser mayor o igual a 0" });
     }
 
     if (!mongoose.Types.ObjectId.isValid(category)) {
       return res.status(400).json({ success: false, message: "Categoría inválida" });
     }
 
-    // Procesar imágenes solo por URL
+    const cleanName = name.trim();
+    const cleanDescription = description?.trim() || "";
+
+    // Procesar imágenes
     let imagesData = [];
     if (Array.isArray(images)) {
       imagesData = images
@@ -68,10 +63,9 @@ export const createProduct = async (req, res) => {
         }));
     }
 
-    // Usar new + save para que se ejecute el pre-save hook del schema
     const product = new Product({
-      name: name.trim(),
-      description: description?.trim() || "",
+      name: cleanName,
+      description: cleanDescription,
       price: Number(price),
       stock: Number(stock) || 0,
       category,
@@ -79,22 +73,39 @@ export const createProduct = async (req, res) => {
       active: true,
     });
 
-    await product.save(); // aquí se dispara el pre("save") y se autogenera productNumber
+    await product.save();
 
     return res.status(201).json({
       success: true,
       data: product,
     });
+
   } catch (error) {
     console.error("CREATE PRODUCT ERROR:", error);
+
+    // Mejor manejo de errores de validación de Mongoose
+    if (error.name === "ValidationError") {
+      const messages = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({
+        success: false,
+        message: messages.join(", "),
+      });
+    }
+
+    if (error.code === 11000) {
+      return res.status(400).json({
+        success: false,
+        message: "Ya existe un producto con esos datos",
+      });
+    }
+
     return res.status(500).json({
       success: false,
-      message: "Error al crear producto",
-      error: error.message,
+      message: "Error al crear el producto",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined
     });
   }
 };
-
 /* ======================================================
    ACTUALIZAR PRODUCTO
 ====================================================== */
@@ -104,8 +115,8 @@ export const updateProduct = async (req, res) => {
     const updateData = {};
 
     if (req.body.name !== undefined) updateData.name = req.body.name.trim();
-    if (req.body.price !== undefined) updateData.price = Number(req.body.price);
     if (req.body.description !== undefined) updateData.description = req.body.description.trim();
+    if (req.body.price !== undefined) updateData.price = Number(req.body.price);
     if (req.body.stock !== undefined) updateData.stock = Number(req.body.stock);
 
     if (req.body.category !== undefined) {
@@ -115,7 +126,7 @@ export const updateProduct = async (req, res) => {
       updateData.category = req.body.category;
     }
 
-    // Imágenes desde URLs (JSON)
+    // Imágenes desde URLs
     if (Array.isArray(req.body.images)) {
       updateData.images = req.body.images
         .filter((url) => typeof url === "string" && url.startsWith("https://"))
@@ -149,7 +160,13 @@ export const updateProduct = async (req, res) => {
     res.json({ success: true, data: product });
   } catch (error) {
     console.error("UPDATE PRODUCT ERROR:", error);
-    res.status(500).json({ success: false, message: error.message });
+
+    if (error.name === "ValidationError") {
+      const messages = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({ success: false, message: messages.join(", ") });
+    }
+
+    res.status(500).json({ success: false, message: "Error al actualizar el producto" });
   }
 };
 

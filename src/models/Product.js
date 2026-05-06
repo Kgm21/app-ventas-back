@@ -2,7 +2,6 @@ import mongoose from "mongoose";
 
 const productSchema = new mongoose.Schema(
   {
-    // Número interno único (ej: 0001, 0002...) - útil para facturación y etiquetas
     productNumber: {
       type: Number,
       unique: true,
@@ -23,7 +22,7 @@ const productSchema = new mongoose.Schema(
       type: String,
       required: [true, "La descripción del producto es obligatoria"],
       trim: true,
-      minlength: [20, "La descripción debe tener al menos 20 caracteres"],
+      minlength: [10, "La descripción debe tener al menos 10 caracteres"], // ← Cambiado a 10
       maxlength: [3000, "La descripción no puede superar los 3000 caracteres"],
     },
 
@@ -86,7 +85,7 @@ const productSchema = new mongoose.Schema(
   }
 );
 
-// Índices compuestos
+// Índices
 productSchema.index({ name: "text", description: "text" });
 productSchema.index({ category: 1, active: 1, createdAt: -1 });
 productSchema.index({ "images.public_id": 1 });
@@ -95,14 +94,16 @@ productSchema.index({ "images.public_id": 1 });
 productSchema.virtual("imageCount").get(function () {
   return this.images.length;
 });
+
 productSchema.virtual("firstImage").get(function () {
   return this.images.length > 0 ? this.images[0].url : null;
 });
+
 productSchema.virtual("hasImages").get(function () {
   return this.images.length > 0;
 });
 
-// Pre-save hook: auto-increment productNumber
+// Auto-increment productNumber
 productSchema.pre("save", async function (next) {
   if (!this.isNew || this.productNumber) return next();
 
